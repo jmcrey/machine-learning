@@ -30,8 +30,12 @@ def softmax(x):
     """
     ### YOUR CODE HERE
 
-    exps = np.exp(x - np.max(x))
-    x = exps / np.sum(exps, axis=1, keepdims=True)
+    if len(x.shape) > 1:
+        exps = np.exp(x - np.max(x))
+        x = exps / np.sum(exps, axis=1, keepdims=True)
+    else:
+        exps = np.exp(x - np.max(x))
+        x = exps / np.sum(exps)
 
     ### END YOUR CODE
     return x
