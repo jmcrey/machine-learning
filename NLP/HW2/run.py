@@ -10,6 +10,7 @@ import time
 
 from word2vec import *
 from sgd import *
+from knn import knn_wrapper
 
 # Check Python Version
 import sys
@@ -73,3 +74,5 @@ plt.xlim((np.min(coord[:,0]), np.max(coord[:,0])))
 plt.ylim((np.min(coord[:,1]), np.max(coord[:,1])))
 
 plt.savefig('word_vectors.png')
+
+knn_wrapper(visualizeWords[:10], tokens, wordVectors, 5)

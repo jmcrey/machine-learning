@@ -130,14 +130,14 @@ def negSamplingLossAndGradient(
     loss = -np.log(u_o_sig) - np.sum(np.log(u_k_sig))
 
     u_o_sig -= 1
-    u_k_sig = u_k_sig.reshape((u_k_sig.shape[0], 1)) - 1
+    u_k_sig = u_k_sig.reshape((u_k_sig.shape[0], 1)) - 1  # K x 1 vector
 
     gradCenterVec = u_o_sig * u_o - np.sum(u_k_sig * u_k, axis=0)
     gradOutsideVecs[outsideWordIdx, :] = (u_o_sig * centerWordVec)
 
-    sample = u_k_sig * centerWordVec
+    sample = u_k_sig * centerWordVec  # Broadcast center word vector
     for k, i in enumerate(indices[1:]):
-        gradOutsideVecs[i, :] -= sample[k]
+        gradOutsideVecs[i, :] -= sample[k]  # Negative loss based on index
 
     ### END YOUR CODE
 
@@ -185,8 +185,8 @@ def skipgram(currentCenterWord, windowSize, outsideWords, word2Ind,
 
     for word in outsideWords:
         o = word2Ind[word]
-        closs, gradCenter, gradOutside = word2vecLossAndGradient(v_c, o, outsideVectors, dataset)
-        loss += closs
+        c_loss, gradCenter, gradOutside = word2vecLossAndGradient(v_c, o, outsideVectors, dataset)
+        loss += c_loss
         gradCenterVecs[c, :] += gradCenter
         gradOutsideVectors += gradOutside
 
