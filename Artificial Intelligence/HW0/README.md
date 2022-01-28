@@ -13,3 +13,18 @@ Install: `pip -r requirements.txt`
 Usage: `python grayscale.py -p /path/to/image -o /path/to/outfile` (run `python grayscale.py -h` for details)
 
 Returns: "Grayscale Image Written To: /path/to/outfile"
+
+## Data Summary
+Calculates the min, max, mean and sample standard deviation of the number of COVID cases in a given state.
+
+Usage: `python summary.py -s "florida"` (run `python summary.py -h` for details)
+
+Returns:
+
+```
+Stats for FLORIDA:
+	- Min: 2.0
+	- Max: 5420755.0
+	- Mean: 1777642.8149210904
+	- Standard Deviation: 1388586.922729319
+```

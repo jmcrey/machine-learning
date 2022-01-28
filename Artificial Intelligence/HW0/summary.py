@@ -90,9 +90,12 @@ def _get_data(path: str) -> dict:
 def _parse_args() -> Namespace:
     """ Parse command line arguments """
     parser = ArgumentParser(
-        description="This program computes stats for the number of COVID cases in a given state"
+        description=(
+            "This program computes stats for the number of COVID cases in a given state. "
+            "Encapsulate the state in quotes (e.g. \"new york\") for most accurate reading"
+        )
     )
-    parser.add_argument('-s', '--state', type=str, required=True, dest='target', help="The name of the US state")
+    parser.add_argument('-s', '--state', type=str, required=True, dest='target', help="The name of the US state (long form only)")
     return parser.parse_args()
 
 
