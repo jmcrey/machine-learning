@@ -15,7 +15,7 @@ Usage: `python grayscale.py -p /path/to/image -o /path/to/outfile` (run `python 
 Returns: "Grayscale Image Written To: /path/to/outfile"
 
 ## Data Summary
-Calculates the min, max, mean and sample standard deviation of the number of COVID cases in a given state.
+Calculates the min, max, mean and sample standard deviation of the number of COVID cases in a given state. Requires the input at `data/covid.csv` in order to function.
 
 Usage: `python summary.py -s "florida"` (run `python summary.py -h` for details)
 
