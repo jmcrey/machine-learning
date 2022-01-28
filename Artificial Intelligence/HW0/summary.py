@@ -9,13 +9,13 @@ import math
 _path = os.path.join(os.path.dirname(__file__), 'data', 'covid.csv')
 
 
-def get_stddev(data: List[int], mean: float) -> float:
+def get_std(data: List[int], mean: float) -> float:
     """ Calculates the standard deviation given the data and mean """
     dist = list()
     for x in data:
         dist.append(math.pow(abs(x - mean), 2))
-    stddev = math.sqrt(sum(dist) / len(data))
-    return stddev
+    std = math.sqrt(sum(dist) / (len(data) - 1))
+    return std
 
 
 def get_mean(data: List[int]) -> float:
@@ -55,6 +55,12 @@ def main(target: str, cases: dict) -> None:
             max_ = max(data)
             mean = np.mean(data)
             stddev = np.std(data)
+
+        Can also use pandas:
+            data = df.loc[df.state == {target}]
+            mean = data.cases.mean()
+            std = data.cases.std()
+            ...
     """
     if not cases.get(target):
         print("Target has no available data!")
@@ -64,8 +70,21 @@ def main(target: str, cases: dict) -> None:
     min_ = get_min(data)
     max_ = get_max(data)
     mean = get_mean(data)
-    stddev = get_stddev(data, mean)
+    stddev = get_std(data, mean)
     print(f"Stats for {target.upper()}:\n\t- Min: {min_}\n\t- Max: {max_}\n\t- Mean: {mean}\n\t- Standard Deviation: {stddev}")
+
+
+def _get_data(path: str) -> dict:
+    """ Reads the data from the CSV """
+    cases = dict()
+    with open(path, 'r') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            state = row['state'].lower().strip()
+            if not cases.get(state):
+                cases[state] = list()
+            cases[state].append(float(row['cases']))
+    return cases
 
 
 def _parse_args() -> Namespace:
@@ -78,14 +97,7 @@ def _parse_args() -> Namespace:
 
 
 if __name__ == '__main__':
-    cases = dict()
-    with open(_path, 'r') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            state = row['state'].lower().strip()
-            if not cases.get(state):
-                cases[state] = list()
-            cases[state].append(int(row['cases']))
+    cases = _get_data(_path)
     args = _parse_args()
     target = args.target.lower().strip()
     main(target, cases)
