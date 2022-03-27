@@ -1,0 +1,5 @@
+pandas
+numpy
+scipy
+typing_extensions
+geopy
