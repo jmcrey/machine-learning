@@ -1,13 +1,15 @@
 from queue import LifoQueue
-from typing_extensions import Self
+
 from dataclasses import dataclass
-from typing import Dict, List, Tuple, Optional, Set, Union
+from typing import Callable, Dict, List, Tuple, Optional, Set, Union
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter, Namespace
 import os
 import csv
 import time
 import heapq
 
+from geopy.distance import distance
+from typing_extensions import Self
 from scipy.sparse import lil_matrix
 from scipy.sparse._csr import csr_matrix
 from scipy.sparse._coo import coo_matrix
@@ -23,7 +25,7 @@ class DuplicateNodeError(Exception):
 class Node:
     node_id: int
     weight: float
-    heuristic: float = 0.0
+    heuristic: Optional[float] = None
     parent_node: Optional[Self] = None
 
     def __str__(self) -> str:
@@ -41,49 +43,57 @@ class Node:
             raise TypeError(f"Cannot compare 'Node' object to {__o.__class__.__name__}")
         return self.node_id != __o.node_id
 
-    def __add__(self, __o: object):
+    def __add__(self, __o: object) -> Self:
         """ Add the number to the weight and return a new Node object. """
         if not isinstance(__o, float) and not isinstance(__o, int):
             raise TypeError(f"Cannot add 'Node' with {__o.__class__.__name__} object. Must be 'float' or 'int'")
         weight = self.weight + __o
         if weight < 0:
             raise ValueError("A 'Node' object's weight cannot be negative")
-        return Node(self.node_id, weight, self.parent_node)
+        return Node(self.node_id, weight, self.heuristic, self.parent_node)
 
-    def __sub__(self, __o: object):
+    def __sub__(self, __o: object) -> Self:
         """ Subtract the number to the weight and return a new Node object. """
         if not isinstance(__o, float) and not isinstance(__o, int):
             raise TypeError(f"Cannot add 'Node' with {__o.__class__.__name__} object")
         weight = self.weight - __o
         if weight < 0:
             raise ValueError("A 'Node' object's weight cannot be negative")
-        return Node(self.node_id, weight, self.parent_node)
+        return Node(self.node_id, weight, self.heuristic, self.parent_node)
 
     def __lt__(self, __o: object) -> bool:
         """ Compare the weight of 'self' and the given Node. Return True if the weight of 'self' is less than the given Node. """
         if not isinstance(__o, Node):
             raise TypeError(f"Cannot compare 'Node' object to {__o.__class__.__name__}")
-        return self.weight + self.heuristic < __o.weight + __o.heuristic
-    
+        x = self.weight + self.heuristic if self.heuristic else self.weight
+        y = __o.weight + __o.heuristic if __o.heuristic else __o.weight
+        return x < y
+
     def __le__(self, __o: object) -> bool:
         """ Compare the weight of 'self' and the given Node. Return True if the weight of 'self' is less than or equal to the 
             given Node. """
         if not isinstance(__o, Node):
             raise TypeError(f"Cannot compare 'Node' object to {__o.__class__.__name__}")
-        return self.weight + self.heuristic <= __o.weight + __o.heuristic
+        x = self.weight + self.heuristic if self.heuristic else self.weight
+        y = __o.weight + __o.heuristic if __o.heuristic else __o.weight
+        return x <= y
     
     def __gt__(self, __o: object) -> bool:
         """ Compare the weight of 'self' and the given Node. Return True if the weight of 'self' is greater than the given Node. """
         if not isinstance(__o, Node):
             raise TypeError(f"Cannot compare 'Node' object to {__o.__class__.__name__}")
-        return self.weight + self.heuristic > __o.weight + self.heuristic
+        x = self.weight + self.heuristic if self.heuristic else self.weight
+        y = __o.weight + __o.heuristic if __o.heuristic else __o.weight
+        return x > y
     
     def __ge__(self, __o: object) -> bool:
         """ Compare the weight of 'self' and the given Node. Return True if the weight of 'self' is greater than or equal
             to the given Node. """
         if not isinstance(__o, Node):
             raise TypeError(f"Cannot compare 'Node' object to {__o.__class__.__name__}")
-        return self.weight + self.heuristic >= __o.weight + self.heuristic
+        x = self.weight + self.heuristic if self.heuristic else self.weight
+        y = __o.weight + __o.heuristic if __o.heuristic else __o.weight
+        return x >= y
 
 
 class AdjacencyMatrix:
@@ -102,9 +112,7 @@ class AdjacencyMatrix:
         else:
             id_ = node
 
-        if self._inverse_map.get(id_):
-            return True
-        return False
+        return bool(self._inverse_map.get(id_))
     
     def get_location(self, node: Union[int, Node]) -> Optional[Tuple[float, float]]:
         """ Returns the original weight for a given Node """
@@ -115,7 +123,34 @@ class AdjacencyMatrix:
 
         return self._inverse_map.get(id_)
 
-    def get_children(self, node: Node) -> List[Node]:
+    def get_node(self, node_id: int, weight: float, heuristic: Callable = None, parent_node: Node = None, **kwargs) -> Node:
+        """ Builds a node from the given arguments.
+        
+            Parameters:
+                node_id (int): The ID of the node
+                weight (float): The weight of the node
+                heuristic (Callable): A function to compute the heuristic of the Node. Must accept a `node_id` argument.
+                                      Any other args can be passed using the kwargs argument.
+                parent_node (Node): A parent Node
+                **kwargs: Any arguments needed by the heuristic function
+            
+            Returns:
+                Node(node_id, weight, heuristic, parent_node)
+        """
+        h = None
+        if heuristic:
+            h = heuristic(node_id=node_id, **kwargs)
+            if not isinstance(h, float) and not h is None:
+                raise ValueError(f"'heuristic' must return a 'float' or 'None' value, not '{h.__class__.__name__}'")
+
+        return Node(
+            node_id=node_id,
+            weight=weight,
+            heuristic=h,
+            parent_node=parent_node
+        )
+
+    def get_children(self, node: Node, heuristic: Callable = None, **kwargs) -> List[Node]:
         """ Returns all the weights and Node IDs of the non-zero children of the given Node ID.
         
             Parameters:
@@ -129,7 +164,7 @@ class AdjacencyMatrix:
                     [0, 1, 0],
                     [0, 3, 2]
                 ]
-                >>> adjacency.get(Node(1, 0, None))
+                >>> adjacency.get(Node(1, 0, None, None))
                 [(3, 1), (2, 2)]
         """
         if self._matrix is None:
@@ -137,7 +172,8 @@ class AdjacencyMatrix:
 
         _, node_ids = self._matrix[node.node_id].nonzero()
         children: List[Node] = [
-            Node(node_id, self._matrix[node.node_id, node_id], node) for node_id in node_ids
+            self.get_node(node_id, self._matrix[node.node_id, node_id], heuristic=heuristic, parent_node=node, **kwargs) 
+            for node_id in node_ids
         ]
         return children
 
@@ -294,10 +330,11 @@ class UniformCostSearch:
         self.explored: Set[int] = set()
         self.queue = PriorityQueue()
 
-    def path(self, current_node: Node) -> LifoQueue:
-        """ Returns the path from current node back to the first parent node """
+    def backtrack(self, current_node: Node) -> LifoQueue:
+        """ Backtracks the path from current node to the first parent node """
         stack = LifoQueue()
         while current_node.parent_node is not None:
+            current_node -= current_node.parent_node.weight
             stack.put_nowait(current_node)
             current_node = current_node.parent_node
         stack.put_nowait(current_node)
@@ -305,30 +342,35 @@ class UniformCostSearch:
 
     def search(self, start_node_id: int, goal_node_id: int) -> Optional[LifoQueue]:
         """ Searches the graph for the best path from the given start node to the given destination node """
+        if start_node_id == goal_node_id:
+            return self.backtrack(self.graph.get_node(start_node_id, 0))
+
         if not self.graph.exists(start_node_id):
             raise ValueError(f"The Start Node {start_node_id} does not exist")
         
         if not self.graph.exists(goal_node_id):
             raise ValueError(f"The Goal Node {goal_node_id} does not exist")
+        
+        return self._search_graph(start_node_id, goal_node_id)
 
-        node = Node(start_node_id, 0, None)
-        self.explore(node)
-
-        if self.queue.empty():
-            return None  # The start node had no children
+    def _search_graph(self, start_node_id: int, goal_node_id: int) -> Optional[LifoQueue]:
+        """ Implements the UCS search function using the parent's weight as the heuristic """
+        node = self.graph.get_node(start_node_id, 0)
+        
+        self.queue.push(node)  # Push the start node into the queue
 
         while node.node_id != goal_node_id and not self.queue.empty():
             node = self.queue.pop()
             self.explore(node)
 
         if node.node_id == goal_node_id:
-            return self.path(node)
+            return self.backtrack(node)
         else:
             return None
 
-    def explore(self, node: Node) -> None:
+    def explore(self, node: Node, **kwargs) -> None:
         """ Explore the given node by getting all its children and adding them to the priority queue """
-        children = self.graph.get_children(node)
+        children = self.graph.get_children(node, self.heuristic, **kwargs)
         if children:
             self.add(children)
         self.explored.add(node.node_id)
@@ -342,29 +384,70 @@ class UniformCostSearch:
                 continue
 
             if child.parent_node:
-                return child + child.parent_node.weight
+                child += child.parent_node.weight  # Keep a running total of the weight
+            
+            self.push(child)
 
-            idx, current = self.queue.find(child)
-            if current and current <= child:
-                continue  # Do nothing, the child is in the queue with less or equal weight
-            elif current and current > child:
-                self.queue.replace(idx, child)  # Delete the current item in the queue and replace with the new node
-            else:
-                self.queue.push(child)
+    def push(self, child: Node) -> None:
+        """ Pushes the child node to the frontier """
+        idx, current = self.queue.find(child)
+        if current and current <= child:
+            return  # Do nothing, the child is in the queue with less or equal weight
+        elif current and current > child:
+            self.queue.replace(idx, child)  # Delete the current item in the queue and replace with the new node
+        else:
+            self.queue.push(child)
 
-    def update_weight(self, child: Node) -> Node:
-        """ Updates the weight of the child with the weight of the parent """
-        if child.parent_node:
-            return child + child.parent_node.weight
-        return child
+    def heuristic(self, node_id: int, **kwargs) -> float:
+        """ Defines the heuristic for the model """
+        pass
 
 
 class AStar(UniformCostSearch):
 
+    """ For this A* Algorithm, I use the formula: Cost(Next) = Total_Cost(Start, Next) + H(Next).
+
+        This formula is consistent with Wikipedia's description, and seems to be an equally valid approach to
+        A*. It is also more consistent with the Uniform Cost Search.
+
+        Wikipedia: https://en.wikipedia.org/wiki/A*_search_algorithm
+    """
+
     def __init__(self, graph: AdjacencyMatrix) -> None:
         super().__init__(graph)
 
-    
+    def _search_graph(self, start_node_id: int, goal_node_id: int) -> Optional[LifoQueue]:
+        """ Implements the UCS search function using the parent's weight as the heuristic """
+        goal_location = self.graph.get_location(goal_node_id)  # Get the goal node's location from the graph
+        node = self.graph.get_node(start_node_id, 0)
+
+        self.queue.push(node)  # Push the parent node into the queue
+
+        while node.node_id != goal_node_id and not self.queue.empty():
+            node = self.queue.pop()
+            self.explore(node, goal_location=goal_location)
+
+        if node.node_id == goal_node_id:
+            return self.backtrack(node)
+        else:
+            return None
+
+    def heuristic(self, node_id: int, **kwargs) -> float:
+        """ Defines the heuristic for the search algorithm. In this case, it is the absolute distance from the
+            node to the goal state. The distance is computed using geopy.
+
+            Note that this can be change to use the algorithm discussed in class: Cost(Next) = Cost(Next) + H(Next) - H(Parent).
+            If desired, the **kwargs must include the parent's heuristic. You can see the comments below the return statment
+            for an example.
+        """
+        goal_location = kwargs['goal_location']
+        node_location = self.graph.get_location(node_id)
+        # Get the absolute distance between the two locations
+        node_distance = np.absolute(distance(node_location, goal_location).miles)
+        return node_distance
+        # H(Next) - H(Node)
+        # parent_heuristic = kwargs.get('parent_heuristic', 0.0)
+        # return node_distance - parent_heuristic
 
 
 
@@ -379,7 +462,7 @@ def _parse_args() -> Namespace:
                         help='The path to the Taxi data')
     parser.add_argument('-s', '--start', dest='start', type=int, required=False, default=0, help='The ID of the start node')
     parser.add_argument('-d', '--dest', dest='destination', type=int, required=False, default=1, help='The ID of the destination node')
-    parser.add_argument('-a', '--alg', dest='algorithm', required=False, default='UCS', choices=['UCS', 'A*'],
+    parser.add_argument('-a', '--alg', dest='algorithm', required=False, default='UCS', choices=['UCS', 'AStar'],
                         help='The algorithm to use to calculate the path. Either Uniform Cost Search (UCS) or A* (a*)')
     parser.add_argument('--save', dest='save_state', required=False, default=False, action='store_true',
                         help='Write the graph to disk. Must specify \'--output\' if set')
@@ -389,10 +472,6 @@ def _parse_args() -> Namespace:
 
 def _validate_args(args: Namespace) -> None:
     """ Validates the given arguments """
-    if args.start == args.destination:
-        raise ValueError("Cannot calculate path for the same start and destination nodes. Please specify two different "
-                         "Node IDs")
-
     if not os.path.exists(args.path):
         raise ValueError(f"Path to data must exist. {args.path} path does not exist!")
 
@@ -427,17 +506,16 @@ def report(time_taken: int, path: LifoQueue = None) -> None:
             nodes.append(path.get_nowait())
 
         output = 'Path: '
-        running_weight = 0.0
+        total_weight = 0.0
         for i, node in enumerate(nodes):
             if i == 0:
                 output += f"{str(node)}"
             else:
-                weight = node.weight - running_weight
-                output += f' --{weight}--> {str(node)}'
-                running_weight += weight
+                output += f' --{np.round(node.weight, 4)}--> {str(node)}'
+                total_weight += node.weight
         print(output)
-        print(f"Total Cost of Path: {nodes[-1].weight}")
-    print(f"Total Time Taken: {time_taken}s")
+        print(f"Total Cost of Path: {np.round(total_weight, 4)}")
+    print(f"Total Time Taken: {np.round(time_taken, 4)}s")
 
 
 def main():
