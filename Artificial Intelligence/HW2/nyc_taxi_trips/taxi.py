@@ -458,7 +458,7 @@ def _parse_args() -> Namespace:
         'path to a given destination using the given algorithm.'
         )
     )
-    parser.add_argument('-p', '--path', required=False, dest='path', default='nyc_taxi_trips/nyc_taxi_data.csv',
+    parser.add_argument('-p', '--path', required=False, dest='path', default='nyc_taxi_data.csv',
                         help='The path to the Taxi data')
     parser.add_argument('-s', '--start', dest='start', type=int, required=False, default=0, help='The ID of the start node')
     parser.add_argument('-d', '--dest', dest='destination', type=int, required=False, default=1, help='The ID of the destination node')
