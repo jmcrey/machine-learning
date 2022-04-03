@@ -10,6 +10,9 @@ import heapq
 
 from geopy.distance import distance
 from typing_extensions import Self
+
+# `scipy` is *only* used to store the large and sparse adjacency matrix. 
+# None of the scientific mechanisms are used with it!
 from scipy.sparse import lil_matrix
 from scipy.sparse._csr import csr_matrix
 from scipy.sparse._coo import coo_matrix
