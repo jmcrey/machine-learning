@@ -9,13 +9,11 @@ import numpy as np
 
 class Ngram:
 
-    def __init__(self, n: int, smoothing_factor: int = 1) -> None:
+    def __init__(self, n: int) -> None:
         if not isinstance(n, int) or n < 1:
             raise ValueError(f"'n' must be an integer greater than or equal to 1, not {n.__class__.__name__}")
         self.n = n
-        self.smoothing = smoothing_factor
         self.ngram = None
-        self.vocabulary = None
         self.start_token = "<SOS>"
         self.end_token = "<EOS>"
         self.unknown_token = "<UNK>"
@@ -62,12 +60,9 @@ class Ngram:
                  ('the',): defaultdict(<class 'float'>, {'first': 0.5, 'second': 0.25, 'third': 0.25}),
                  ('first',): defaultdict(<class 'float'>, {'sentence': 1.0}), ...}
         """
-        self.vocabulary = set()
         self.ngram_count = defaultdict(lambda: defaultdict(int))
         for sentence in corpus:
             for ngram in self._ngrams(sentence):
-                # Update the vocabulary
-                self.vocabulary.update(ngram)
                 # Update the ngram frequency
                 w_i = ngram[:-1]
                 w_n = ngram[-1]
@@ -284,13 +279,14 @@ def read(path: str) -> List[List[str]]:
     return [s.split() for s in content]
 
 
-# ted = read('ted.txt')
-# test_ted = read('test.ted.txt')
-# test_reddit = read('test.reddit.txt')
-# test_news = read('test.news.txt')
 
-# model = Unigram()
-# model.fit(ted)
-# print(model.perplexity(test_ted))
-# print(model.perplexity(test_reddit))
-# print(model.perplexity(test_news))
+ted = read('ted.txt')
+test_ted = read('test.ted.txt')
+test_reddit = read('test.reddit.txt')
+test_news = read('test.news.txt')
+
+model = Unigram()
+model.fit(ted)
+print(model.perplexity(test_ted))
+print(model.perplexity(test_reddit))
+print(model.perplexity(test_news))
