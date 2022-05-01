@@ -5,6 +5,8 @@ from functools import reduce
 import os
 import operator
 import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 
 
 class Ngram:
@@ -34,7 +36,6 @@ class Ngram:
         self.pad_left = pad_left
         self.pad_right = pad_right
         self._calculate_frequency(corpus)
-        self._fit()
 
     def _calculate_frequency(self, corpus: List[List[str]]) -> None:
         """ Calculates the frequency of the words and the pair of words 
@@ -43,7 +44,7 @@ class Ngram:
                 None
 
             Returns:
-                None. Sets the internal variables 'word_frequency' and 'ngram_frequency'
+                None. Sets the internal variables 'ngram_count' and 'vocab'
             
             Example:
                 >>> corpus = [
@@ -60,24 +61,27 @@ class Ngram:
                  ('the',): defaultdict(<class 'float'>, {'first': 0.5, 'second': 0.25, 'third': 0.25}),
                  ('first',): defaultdict(<class 'float'>, {'sentence': 1.0}), ...}
         """
+        self.vocab = set()
         self.ngram_count = defaultdict(lambda: defaultdict(int))
         for sentence in corpus:
             for ngram in self._ngrams(sentence):
+                # Update the vocabulary with the items from the Ngram
+                self.vocab.update(ngram)
                 # Update the ngram frequency
                 w_i = ngram[:-1]
                 w_n = ngram[-1]
                 self.ngram_count[w_i][w_n] += 1
 
-    def _fit(self) -> None:
-        """ Calcualates the probability of word-pairs.
-        
-            P(w_i | w_i-1... w_1)
-        """
-        self.ngram = defaultdict(lambda: defaultdict(float))
-        for ngram, pairs in self.ngram_count.items():
-            ngram_frequency = float(sum(pairs.values()))
-            for word, word_frequency in pairs.items():
-                self.ngram[ngram][word] = word_frequency / ngram_frequency
+    def score(self, word: str, history: Tuple[str] = None) -> float:
+        """ Returns the probability of the word, given the history. """
+        counts = self.ngram_count[history]
+        # Words that have not been seen have a probability of 0.
+        if not counts:
+            return 0.
+        # Calculate the relative frequency of the words
+        word = counts[word]
+        total = sum(counts.values())
+        return word / total
 
     def npredict(self, n: int):
         """ Predicts 'n' number of words. """
@@ -89,20 +93,22 @@ class Ngram:
     
     def predict_proba(self, tokens: List[str]) -> float:
         """ Predicts the probability that the sentence would have occurred """
-        if not self.ngram:
-            raise ValueError("Must call 'fit()' before predict. No model has been initialized!")
-        
         proba = []
         for ngram in self._ngrams(tokens):
-            w_i = ngram[:-1]
-            w_n = ngram[-1]
-            p = self.ngram[w_i][w_n]
+            history = ngram[:-1]
+            word = ngram[-1]
+            p = self.score(word, history=history)
             if p:
                 proba.append(p)
         return reduce(operator.mul, proba, 1.0)
 
     def perplexity(self, corpus: List[List[str]]) -> float:
         """ Returns the perplexity of a given corpus. Calculates perplexity using the following formula:
+
+            2^(- (1 / N) log2(P(w1, w2, ..., wN))
+
+            Here, N is the size of the vocabulary. Note that this formula is used because it is more numerically stable
+            than the traditional perplexity formula:
 
             sqrt(1 / P(w1, w2, ..., wN), N)
         
@@ -122,7 +128,7 @@ class Ngram:
                 >>> model = Ngram(2)
                 >>> model.fit(corpus)
                 >>> model.perplexity(corpus)
-                1.9200933737095864
+                1.6555065597696215
                 >>> [model.perplexity([s]) for s in corpus]
                 [1.515716566510398, 2.0, 1.4142135623730951, 1.7411011265922482]
                 >>> model = Ngram(3)
@@ -136,9 +142,9 @@ class Ngram:
         proba = []
         for sentence in corpus:
             for ngram in self._ngrams(sentence):
-                w_i = ngram[:-1]
-                w_n = ngram[-1]
-                p = self.ngram[w_i][w_n]
+                history = ngram[:-1]
+                word = ngram[-1]
+                p = self.score(word, history=history)
                 if p:
                     proba.append(p)
 
@@ -174,109 +180,37 @@ class Ngram:
         return zip(*ngrams)
 
 
-class Unigram(Ngram):
+class Uniform(Ngram):
 
-    def __init__(self, dist: str = 'uniform') -> None:
-        super().__init__(n=1)
-        if dist not in {'uniform', 'relative'}:
-            raise ValueError(f"'dist' must be one of 'uniform' or 'relative'. '{dist}' is not supported.")
-        self.distribution = dist
-        self.vocabulary_count = None
+    """ Same as Ngram model, but scores the word using a uniform distribution. In this case, it is normalized by the size of the vocabulary. """
 
-    def _calculate_frequency(self, corpus: List[List[str]]) -> None:
-        """ Calculates the frequency of the words and the pair of words 
+    def __init__(self, n: int) -> None:
+        super().__init__(n)
 
-            Parameters:
-                None
-
-            Returns:
-                None. Sets the internal variable 'vocabulary_count'
-        """
-        self.vocabulary_count = defaultdict(int)
-        for sentence in corpus:
-            for word in sentence:
-                self.vocabulary_count[word] += 1
-
-    def _fit(self) -> None:
-        """ Calcualates the probability of word-pairs.
-        
-            P(w_i | w_i-1... w_1)
-        """
-        if not self.vocabulary_count:
-            raise Exception("Unexpected Error: 'vocabulary_count' not yet set. Please call 'calculate_frequency()' before this function.")
-
-        self.ngram = defaultdict(float)
-        size = sum(self.vocabulary_count.values())
-        for word in self.vocabulary_count.keys():
-            if self.distribution == 'relative':
-                # Set the probability to the relative count of the words
-                self.ngram[word] = self.vocabulary_count[word] / size
-            else:
-                # Set the probability to a uniform count
-                self.ngram[word] = 1 / size
-    
-    def predict(self, sentence: List[str]):
-        """ Predicts the next word given the sentence. """
-        pass
-    
-    def predict_proba(self, tokens: List[str]) -> float:
-        """ Predicts the probability that the sentence would have occurred """
-        if not self.ngram:
-            raise ValueError("Must call 'fit()' before predict. No model has been initialized!")
-        
-        proba = [self.ngram[word] for word in tokens if self.ngram.get(word)]
-        return reduce(operator.mul, proba, 1.0)
-
-    def perplexity(self, corpus: List[List[str]]) -> float:
-        """ Returns the perplexity of a given corpus. Calculates perplexity using the following equivalent formula:
-
-            2^(- (1 / N) log2(P(w1, w2, ..., wN))
-
-            Here, N is the size of the vocabulary. Note that this formula is used because it is more numerically stable
-            than the traditional perplexity formula:
-
-            sqrt(1 / P(w1, w2, ..., wN), N)
-        
-            Parameters:
-                corpus (List[List[str]]): The tokenized corpus of sentences
-            
-            Returns:
-                float: The perplexity score
-            
-            Example:
-                >>> corpus = [
-                    ['This', 'is', 'the', 'first', 'sentence', '.'],
-                    ['This', 'sentence', 'is', 'the', 'second', 'sentence', '.'],
-                    ['And', 'this', 'is', 'the', 'third', 'one', '.'],
-                    ['Is', 'this', 'the', 'first', 'sentence', '?']
-                ]
-                >>> model = Unigram()
-                >>> model.fit(corpus)
-                >>> model.perplexity(corpus)
-                26.000000000000004
-                >>> model = Unigram(dist='relative')
-                >>> model.fit(corpus)
-                >>> model.perplexity(corpus)
-                11.22408002370434
-        """
-        proba = []
-        for sentence in corpus:
-            for word in sentence:
-                p = self.ngram[word]
-                if p:
-                    proba.append(p)
-
-        entropy = -1 * np.mean(np.log2(proba))
-        return pow(2, entropy)
+    def score(self, word: str, history: Tuple[str] = None) -> float:
+        """ Returns the probability of the word, given the history. Score is normalized by the length of the vocabulary """
+        counts = self.ngram_count[history]
+        word = counts[word]
+        if not word:
+            return 0.0
+        else:
+            return 1 / len(self.vocab)
 
 
 class LaplaceNgram(Ngram):
+    
+    """ Same as Ngram model, but scores the word using add-one smoothing combined with relative frequency. """
 
     def __init__(self, n: int, factor: int = 1) -> None:
         super().__init__(n)
         self.factor = factor
-    
 
+    def score(self, word: str, history: Tuple[str] = None) -> float:
+        """ Returns the probability of the word, given the history. """
+        counts = self.ngram_count[history]
+        word = counts[word]
+        total = sum(counts.values())
+        return (word + self.factor) / (total + (len(self.vocab) * self.factor))
 
 
 def read(path: str) -> List[List[str]]:
@@ -293,36 +227,172 @@ def read(path: str) -> List[List[str]]:
     return [s.split() for s in content]
 
 
+def run_ngram(n: int, X_train: List[List[str]], X_tests: List[List[List[str]]]) -> List[float]:
+    """ Trains an Ngram model on the given training set and calcualtes the perplexity scores on the given
+        test sets.
 
-if __name__ == '__main__':
+        Parameters:
+            n (int): The size of the ngram
+            X_train (List[List[str]]):  A tokenized corpus of text
+            X_tests (List[List[List[str]]]): A list of tokenized testing corpuses
+        
+        Returns:
+            List[float]: The perplexity scores on the test sets.
 
+        Example:
+            >>> corpus = [
+                    ['This', 'is', 'the', 'first', 'sentence', '.'],
+                    ['This', 'sentence', 'is', 'the', 'second', 'sentence', '.'],
+                    ['And', 'this', 'is', 'the', 'third', 'one', '.'],
+                    ['Is', 'this', 'the', 'first', 'sentence', '?']
+                ]
+            >>> run_ngram(n=2, X_train=corpus, X_tests=[corpus])
+            [1.6555065597696215]
+    """
+    model = Ngram(n)
+    model.fit(X_train)
+    return [model.perplexity(test_set) for test_set in X_tests]
+
+
+def run_uniform(n: int, X_train: List[List[str]], X_tests: List[List[List[str]]]) -> List[float]:
+    """ Trains a Uniform model on the given training set and calcualtes the perplexity scores on the given
+        test sets.
+
+        Parameters:
+            n (int): The size of the ngram
+            X_train (List[List[str]]):  A tokenized corpus of text
+            X_tests (List[List[List[str]]]): A list of tokenized testing corpuses
+        
+        Returns:
+            List[float]: The perplexity scores on the test sets.
+
+        Example:
+            >>> corpus = [
+                    ['This', 'is', 'the', 'first', 'sentence', '.'],
+                    ['This', 'sentence', 'is', 'the', 'second', 'sentence', '.'],
+                    ['And', 'this', 'is', 'the', 'third', 'one', '.'],
+                    ['Is', 'this', 'the', 'first', 'sentence', '?']
+                ]
+            >>> run_uniform(n=1, X_train=corpus, X_tests=[corpus])
+            [13.000000000000004]
+    """
+    model = Uniform(n)
+    model.fit(X_train)
+    return [model.perplexity(test_set) for test_set in X_tests]
+
+
+def run_laplace(n: int, X_train: List[List[str]], X_tests: List[List[List[str]]], factor: int = 1) -> List[float]:
+    """ Trains an Ngram model on the given training set and calcualtes the perplexity scores on the given
+        test sets.
+
+        Parameters:
+            n (int): The size of the ngram
+            X_train (List[List[str]]):  A tokenized corpus of text
+            X_tests (List[List[List[str]]]): A list of tokenized testing corpuses
+        
+        Returns:
+            List[float]: The perplexity scores on the test sets.
+
+        Example:
+            >>> corpus = [
+                    ['This', 'is', 'the', 'first', 'sentence', '.'],
+                    ['This', 'sentence', 'is', 'the', 'second', 'sentence', '.'],
+                    ['And', 'this', 'is', 'the', 'third', 'one', '.'],
+                    ['Is', 'this', 'the', 'first', 'sentence', '?']
+                ]
+            >>> run_laplace(n=2, X_train=corpus, X_tests=[corpus])
+            [6.349880138332044]
+    """
+    model = LaplaceNgram(n, factor=factor)
+    model.fit(X_train)
+    return [model.perplexity(test_set) for test_set in X_tests]
+
+
+def report(model_name: str, names: List[str], scores: List[float]) -> None:
+    print("#" * 35)
+    print(f"## Results for the {model_name}")
+    for i in range(len(names)):
+        print(f"##   - {names[i]}: {scores[i]}")
+    print("#" * 35)
+
+
+def batch_report(model_name: str, iteration: int, names: List[str], scores: List[float]) -> None:
+    if iteration == 1:
+        print("#" * 35)
+        print(f"## Results for the {model_name}")
+        print("  {scores}".format(scores='\t\t'.join(names)))
+    print("{i} {scores}".format(i=iteration, scores='\t\t'.join([str(round(s, 2)) for s in scores])))
+
+
+def plot(title: str, scores: List[List[float]], columns: List[str]) -> None:
+    df = pd.DataFrame(scores, columns=columns)
+    df['n'] = list(range(1, len(scores) + 1))
+    df.plot(x='n', y=columns, title=title)
+    plt.savefig(os.path.join('outputs', f'{title}.png'), bbox_inches='tight')
+
+
+def main():
+    # Read in all the training data
     ted = read('ted.txt')
     reddit = read('reddit.txt')
+
+    # Read in the test data
     test_ted = read('test.ted.txt')
     test_reddit = read('test.reddit.txt')
     test_news = read('test.news.txt')
-
+    test_names = ['Ted', 'Reddit', 'News']
     test_sets = [test_ted, test_reddit, test_news]
 
-    model = Unigram()
-    model.fit(ted)
-    print([
-        model.perplexity(test) for test in test_sets
-    ])
+    # # Run the Uniform model
+    # scores = run_uniform(n=1, X_train=ted, X_tests=test_sets)
+    # report('Uniform Model', test_names, scores)
 
-    model = Unigram(dist='relative')
-    model.fit(ted)
-    print([
-        model.perplexity(test) for test in test_sets
-    ])
+    # # Run the Unigram model
+    # scores = run_ngram(n=1, X_train=ted, X_tests=test_sets)
+    # report('Unigram Model', test_names, scores)
 
+
+    # Run the Ngram model
+    ted_scores = []
     for i in range(1, 8):
-        if i == 1:
-            model = Unigram(dist='relative')
-        else:
-            model = Ngram(i)
-        
-        model.fit(ted)
-        print([
-            model.perplexity(test) for test in test_sets
-        ])
+        scores = run_ngram(n=i, X_train=ted, X_tests=test_sets)
+        batch_report(f'Ted Ngram', i, test_names, scores)
+        ted_scores.append(scores)
+    
+    reddit_scores = []
+    for i in range(1, 8):
+        scores = run_ngram(n=i, X_train=reddit, X_tests=test_sets)
+        batch_report(f'Reddit Ngram', i, test_names, scores)
+        reddit_scores.append(scores)
+
+    plot('Perplexity for Ted Data (Ngram)', ted_scores, test_names)
+    plot('Perplexity for Reddit Data (Ngram)', reddit_scores, test_names)
+
+    # Run the Laplace model
+    ted_scores = []
+    for i in range(2, 8):
+        if i == 2:
+            print("#" * 35)
+            print(f"## Results for the Ted Laplace")
+            print("  {scores}".format(scores='\t\t'.join(test_names)))
+        scores = run_laplace(n=i, X_train=ted, X_tests=test_sets)
+        batch_report(f'Ted Laplace', i, test_names, scores)
+        ted_scores.append(scores)
+    
+    reddit_scores = []
+    for i in range(2, 8):
+        if i == 2:
+            print("#" * 35)
+            print(f"## Results for the Reddit Laplace")
+            print("  {scores}".format(scores='\t\t'.join(test_names)))
+        scores = run_laplace(n=i, X_train=reddit, X_tests=test_sets)
+        batch_report(f'Ted Laplace', i, test_names, scores)
+        reddit_scores.append(scores)
+
+    plot('Perplexity for Ted Data (Laplace)', ted_scores, test_names)
+    plot('Perplexity for Reddit Data (Laplace)', reddit_scores, test_names)
+    
+
+
+if __name__ == '__main__':
+    main()
