@@ -79,8 +79,12 @@ class Ngram:
             for word, word_frequency in pairs.items():
                 self.ngram[ngram][word] = word_frequency / ngram_frequency
 
-    def predict(self, sentence: str = None):
-        """ Predicts the next word given the sentence. """
+    def npredict(self, n: int):
+        """ Predicts 'n' number of words. """
+        pass
+
+    def _predict(self, ngram: Tuple[str]) -> str:
+        """"""
         pass
     
     def predict_proba(self, tokens: List[str]) -> float:
@@ -96,12 +100,7 @@ class Ngram:
         return reduce(operator.mul, proba, 1.0)
 
     def perplexity(self, corpus: List[List[str]]) -> float:
-        """ Returns the perplexity of a given corpus. Calculates perplexity using the following equivalent formula:
-
-            2^(- (1 / N) log2(P(w1, w2, ..., wN))
-
-            Here, N is the size of the vocabulary. Note that this formula is used because it is more numerically stable
-            than the traditional perplexity formula:
+        """ Returns the perplexity of a given corpus. Calculates perplexity using the following formula:
 
             sqrt(1 / P(w1, w2, ..., wN), N)
         
@@ -281,12 +280,34 @@ def read(path: str) -> List[List[str]]:
 
 
 ted = read('ted.txt')
+reddit = read('reddit.txt')
 test_ted = read('test.ted.txt')
 test_reddit = read('test.reddit.txt')
 test_news = read('test.news.txt')
 
+test_sets = [test_ted, test_reddit, test_news]
+
 model = Unigram()
 model.fit(ted)
-print(model.perplexity(test_ted))
-print(model.perplexity(test_reddit))
-print(model.perplexity(test_news))
+print([
+    model.perplexity(test) for test in test_sets
+])
+
+model = Unigram(dist='relative')
+model.fit(ted)
+print([
+    model.perplexity(test) for test in test_sets
+])
+
+for i in range(1, 8):
+    if i == 1:
+        model = Unigram(dist='relative')
+    else:
+        model = Ngram(i)
+    
+    model.fit(ted)
+    print([
+        model.perplexity(test) for test in test_sets
+    ])
+
+
