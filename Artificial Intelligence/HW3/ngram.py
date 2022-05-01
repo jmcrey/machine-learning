@@ -96,7 +96,9 @@ class Ngram:
         for ngram in self._ngrams(tokens):
             w_i = ngram[:-1]
             w_n = ngram[-1]
-            proba.append(self.ngram[w_i][w_n])
+            p = self.ngram[w_i][w_n]
+            if p:
+                proba.append(p)
         return reduce(operator.mul, proba, 1.0)
 
     def perplexity(self, corpus: List[List[str]]) -> float:
@@ -121,20 +123,27 @@ class Ngram:
                 >>> model.fit(corpus)
                 >>> model.perplexity(corpus)
                 1.9200933737095864
+                >>> [model.perplexity([s]) for s in corpus]
+                [1.515716566510398, 2.0, 1.4142135623730951, 1.7411011265922482]
+                >>> model = Ngram(3)
+                >>> model.fit(corpus)
+                >>> model.perplexity(corpus)
+                1.2970836542335147
+                >>> [model.perplexity([s]) for s in corpus]
+                [1.5650845800732873, 1.2457309396155174, 1.2457309396155174, 1.189207115002721]
+
         """
         proba = []
-        vocabulary = set()
         for sentence in corpus:
             for ngram in self._ngrams(sentence):
                 w_i = ngram[:-1]
                 w_n = ngram[-1]
-                proba.append(self.ngram[w_i][w_n])
-                vocabulary.add(ngram)
+                p = self.ngram[w_i][w_n]
+                if p:
+                    proba.append(p)
 
-        proba = reduce(operator.mul, proba, 1.0)
-        if not proba:
-            return float("inf")
-        return pow(1 / proba, 1 / len(vocabulary))
+        entropy = -1 * np.mean(np.log2(proba))
+        return pow(2, entropy)
 
     def _ngrams(self, tokens: List[str]) -> Generator[Tuple[str], None, None]:
         """ Yield the ngrams of the sentence.
@@ -197,9 +206,8 @@ class Unigram(Ngram):
             raise Exception("Unexpected Error: 'vocabulary_count' not yet set. Please call 'calculate_frequency()' before this function.")
 
         self.ngram = defaultdict(float)
-        self.vocabulary = set(self.vocabulary_count.keys())
-        size = len(self.vocabulary)
-        for word in self.vocabulary:
+        size = sum(self.vocabulary_count.values())
+        for word in self.vocabulary_count.keys():
             if self.distribution == 'relative':
                 # Set the probability to the relative count of the words
                 self.ngram[word] = self.vocabulary_count[word] / size
@@ -216,7 +224,7 @@ class Unigram(Ngram):
         if not self.ngram:
             raise ValueError("Must call 'fit()' before predict. No model has been initialized!")
         
-        proba = [self.ngram[word] for word in tokens]
+        proba = [self.ngram[word] for word in tokens if self.ngram.get(word)]
         return reduce(operator.mul, proba, 1.0)
 
     def perplexity(self, corpus: List[List[str]]) -> float:
@@ -245,23 +253,30 @@ class Unigram(Ngram):
                 >>> model = Unigram()
                 >>> model.fit(corpus)
                 >>> model.perplexity(corpus)
-                169.00000000000003
+                26.000000000000004
                 >>> model = Unigram(dist='relative')
                 >>> model.fit(corpus)
                 >>> model.perplexity(corpus)
-                31.494993094629706
+                11.22408002370434
         """
         proba = []
-        vocabulary = set()
         for sentence in corpus:
             for word in sentence:
-                vocabulary.add(word)
-                proba.append(self.ngram[word])
+                p = self.ngram[word]
+                if p:
+                    proba.append(p)
 
-        proba = reduce(operator.mul, proba, 1.0)
-        if not proba:
-            return float("inf")
-        return pow(1 / proba, 1 / len(vocabulary))
+        entropy = -1 * np.mean(np.log2(proba))
+        return pow(2, entropy)
+
+
+class LaplaceNgram(Ngram):
+
+    def __init__(self, n: int, factor: int = 1) -> None:
+        super().__init__(n)
+        self.factor = factor
+    
+
 
 
 def read(path: str) -> List[List[str]]:
@@ -279,35 +294,35 @@ def read(path: str) -> List[List[str]]:
 
 
 
-ted = read('ted.txt')
-reddit = read('reddit.txt')
-test_ted = read('test.ted.txt')
-test_reddit = read('test.reddit.txt')
-test_news = read('test.news.txt')
+if __name__ == '__main__':
 
-test_sets = [test_ted, test_reddit, test_news]
+    ted = read('ted.txt')
+    reddit = read('reddit.txt')
+    test_ted = read('test.ted.txt')
+    test_reddit = read('test.reddit.txt')
+    test_news = read('test.news.txt')
 
-model = Unigram()
-model.fit(ted)
-print([
-    model.perplexity(test) for test in test_sets
-])
+    test_sets = [test_ted, test_reddit, test_news]
 
-model = Unigram(dist='relative')
-model.fit(ted)
-print([
-    model.perplexity(test) for test in test_sets
-])
-
-for i in range(1, 8):
-    if i == 1:
-        model = Unigram(dist='relative')
-    else:
-        model = Ngram(i)
-    
+    model = Unigram()
     model.fit(ted)
     print([
         model.perplexity(test) for test in test_sets
     ])
 
+    model = Unigram(dist='relative')
+    model.fit(ted)
+    print([
+        model.perplexity(test) for test in test_sets
+    ])
 
+    for i in range(1, 8):
+        if i == 1:
+            model = Unigram(dist='relative')
+        else:
+            model = Ngram(i)
+        
+        model.fit(ted)
+        print([
+            model.perplexity(test) for test in test_sets
+        ])
