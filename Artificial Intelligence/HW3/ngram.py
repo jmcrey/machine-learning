@@ -1,4 +1,4 @@
-from typing import List, Tuple, Generator
+from typing import List, Tuple, Generator, Dict
 from collections import defaultdict
 from functools import reduce
 
@@ -15,7 +15,6 @@ class Ngram:
         if not isinstance(n, int) or n < 1:
             raise ValueError(f"'n' must be an integer greater than or equal to 1, not {n.__class__.__name__}")
         self.n = n
-        self.ngram = None
         self.start_token = "<SOS>"
         self.end_token = "<EOS>"
         self.unknown_token = "<UNK>"
@@ -85,11 +84,39 @@ class Ngram:
 
     def npredict(self, n: int):
         """ Predicts 'n' number of words. """
-        pass
+        if n < 1:
+            raise ValueError("'n' must be greater than or equal to 1")
 
-    def _predict(self, ngram: Tuple[str]) -> str:
-        """"""
-        pass
+        ngram = defaultdict(lambda: defaultdict(float))
+        for history, words in self.ngram_count.items():
+            for word in words.keys():
+                ngram[history][word] = self.score(word, history)
+
+        text = []
+        look_back = self.n - 1
+        while len(text) < n:
+            history = tuple(text[-look_back:])
+            word = self._predict(ngram, history)
+            if isinstance(word, tuple):
+                text.extend(word)
+            else:
+                text.append(word)
+        return text[:n]
+
+    def _predict(self, ngram: Dict[Tuple[str], Dict[str, float]], history: Tuple[str] = None) -> Tuple[str]:
+        """ Given the history and the compute ngram, get the next highest word """
+        counts = ngram[history]
+        if counts:
+            # Get the maximum probability based on the history
+            word, _ = max(counts.items(), key=lambda x: x[1])
+            return (word,)
+        else:
+            # Return the word with the maximum probability if there is no context or the model has not seen this combo of words
+            scores = [(history, word, score) for history, words in ngram.items() for word, score in words.items()]
+            _, _, score = max(scores, key=lambda x: x[2])
+            possibilities = list(filter(lambda x: x[2] == score, scores))
+            choice = np.random.randint(0, high=len(possibilities))
+            return possibilities[choice][0]
     
     def predict_proba(self, tokens: List[str]) -> float:
         """ Predicts the probability that the sentence would have occurred """
@@ -343,13 +370,13 @@ def main():
     test_names = ['Ted', 'Reddit', 'News']
     test_sets = [test_ted, test_reddit, test_news]
 
-    # # Run the Uniform model
-    # scores = run_uniform(n=1, X_train=ted, X_tests=test_sets)
-    # report('Uniform Model', test_names, scores)
+    # Run the Uniform model
+    scores = run_uniform(n=1, X_train=ted, X_tests=test_sets)
+    report('Uniform Model', test_names, scores)
 
-    # # Run the Unigram model
-    # scores = run_ngram(n=1, X_train=ted, X_tests=test_sets)
-    # report('Unigram Model', test_names, scores)
+    # Run the Unigram model
+    scores = run_ngram(n=1, X_train=ted, X_tests=test_sets)
+    report('Unigram Model', test_names, scores)
 
 
     # Run the Ngram model
@@ -391,7 +418,20 @@ def main():
 
     plot('Perplexity for Ted Data (Laplace)', ted_scores, test_names)
     plot('Perplexity for Reddit Data (Laplace)', reddit_scores, test_names)
+
+    ted_ngram = Ngram(7)
+    ted_ngram.fit(ted)
+    ted_text = ted_ngram.npredict(500)
+    with open(os.path.join('outputs', 'ted.out'), 'w+') as f:
+        f.write(' '.join(ted_text))
+    print(f"Perplexity for Ted Generated Text: {ted_ngram.perplexity([ted_text])}")
     
+    reddit_ngram = Ngram(7)
+    reddit_ngram.fit(reddit)
+    reddit_text = reddit_ngram.npredict(500)
+    with open(os.path.join('outputs', 'reddit.out'), 'w+') as f:
+        f.write(' '.join(reddit_text))
+    print(f"Perplexity for Reddit Generated Text: {reddit_ngram.perplexity([reddit_text])}")
 
 
 if __name__ == '__main__':
